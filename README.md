@@ -104,6 +104,8 @@ python preprocess.py --i <path_to_the_images> --m <path_to_the_images-ROI_mask> 
 ### :one: Training
 
 All training code can be found through the entrance of training script `train.py`, and the configuration file, with all the hyperparameters and command line arguments, is `config.py`.
+- For **CFP single-modal** training: set `input_channels` to **3** and `model` to **RRWNet**.
+- For **CFP+FFA multi-modal** training: set `input_channels` to **5** and `model` to **CMRRWNet**.
 
 ```bash
 python train/train.py
@@ -112,7 +114,7 @@ python train/train.py
 
 ### :two: Get predictions
 
-After the model trained, the predictions can be generated using the following command(please modify the configurations first). If you use preprocess for training dataset, pls do the same for test.
+After the model trained, the predictions can be generated using the following command(please modify the configurations first). Remember to adjust the value of `input_channels` according to the single-modal or multi-modal setup. If you use preprocess for training dataset, pls do the same for test.
 
 ```bash
 python get_predictions.py
