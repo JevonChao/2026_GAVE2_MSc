@@ -104,7 +104,7 @@ python train/train.py
 
 ### :two: Get predictions
 
-After the model trained, the predictions can be generated using the following command(please modify the configurations first). Remember to adjust the value of `input_channels` according to the single-modal or multi-modal setup. If you use preprocess for training dataset, pls do the same for test.
+After the model trained, the predictions can be generated using the following command(please modify the configurations first). Remember to adjust the value of `input_channels` according to the single-modal or multi-modal setup.
 
 ```bash
 python get_predictions.py
