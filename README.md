@@ -41,7 +41,7 @@ Make sure you have installed conda in advance.
 Create and activate Python environment
 ```
 conda create -n cmrrwnet python==3.10
-conda activate cmrrwnet gave
+conda activate cmrrwnet
 ```
 
 Update `pip`.
