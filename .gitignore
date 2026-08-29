@@ -20,3 +20,4 @@ wandb/
 *.7z
 *.tar.gz
 *_backup.py
+*_backup.py
