@@ -1,4 +1,45 @@
+> ## Attribution
+>
+> This repository is a **fork with modifications** of
+> [Peng2004/CMRRWNet](https://github.com/Peng2004/CMRRWNet) by **Peng Qiyu**,
+> the reference model provided for the MICCAI 2026 Challenge:
+> [Generalized Analysis of Vessels in Eye, Edition 2 (GAVE2)](https://aistudio.baidu.com/competition/detail/1463/0/introduction).
+> All credit for the original architecture, training pipeline and evaluation
+> scripts belongs to the original author. The upstream project is in turn built
+> on [rrwnet](https://github.com/j-morano/rrwnet) by J. Morano et al.
+>
+> The original README is reproduced below unchanged.
 
+---
+
+# Modifications in this fork
+
+This fork was produced for an MSc dissertation at the University of Glasgow
+(supervisor: Ali Gooya) investigating whether cross-modal FFA information
+improves CFP-based artery and vein segmentation.
+
+The upstream CMRRWNet fuses the CFP, FFA_A and FFA_AV encoder features by
+equal-weighted addition (`fea_a + fea_av + fea_rgb`) followed by channel
+attention. This fork diagnoses a modality-imbalance effect in that scheme and
+replaces the fusion module with two alternatives:
+
+| Fusion variant | Description |
+|---|---|
+| `weighted` | Learnable per-modality scalar weights applied before summation |
+| `attention` | Cross-modal attention fusion |
+
+Files modified relative to upstream: `train/models.py`, `train/config.py`,
+`train/train.py`, `train/r2av.py`, `train/transformations.py`,
+`get_predictions.py`, `get_biomarker.py`.
+
+Files added: evaluation and figure-generation scripts (`evaluate.py`,
+`compare_biomarker.py`, `statistic_significance_test.py`, `make_*.py`),
+plus training logs and configurations under `__training/`.
+
+No dataset images are included in this repository. The GAVE2 data must be
+obtained from the challenge organisers under their own terms of use.
+
+---
 
 # CMRRWNet
 
