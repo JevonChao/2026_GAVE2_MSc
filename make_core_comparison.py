@@ -1,9 +1,13 @@
 """
 核心定性对比图 (带放大框) —— 模仿 RRWNet 论文风格
 
-三列: GT | Task1 (CFP only) | Attention
-每张主图上画若干彩色框标出局部区域, 底部把各框区域放大并排对比,
-突出 attention 相对单模态 baseline 的动脉恢复 (artery-suppression 的缓解)。
+布局: 三列并排, 每列 = 主图(带彩色框) + 下方一条放大条(该列的各框裁剪并排)。
+放大条的总宽度严格等于主图宽度, 各放大块高度一致, 因此三列完全对齐。
+
+同时把中间产物分开保存:
+  1) 带彩色标注框的主图      -> <OUT_DIR>/boxed/
+  2) 带同色边框的放大裁剪图  -> <OUT_DIR>/zoom/
+  3) 单列成品 (主图+放大条)  -> <OUT_DIR>/column/
 
 坐标系: 框坐标在 task1 预测图 (992x1504) 上量得。
 GT (1024x1536) 会先 resize 到预测图尺寸, 使三列对齐。
@@ -18,11 +22,11 @@ from pathlib import Path
 # ============ CONFIG ============
 CASE = 'g_008'
 
-# 三列: (标签, 路径, 是否为GT需要resize)
+# 三列: (标签, 文件名短标识, 路径, 是否为GT需要resize)
 COLUMNS = [
-    ('Ground truth',   f'./data/training/av/{CASE}.png',                    True),
-    ('Single-modality (CFP)', f'./predictions/task1_train/colored_{CASE}.png', False),
-    ('Attention (ours)', f'./predictions/attention_train/colored_{CASE}.png', False),
+    ('Ground truth',          'gt',        f'./data/training/av/{CASE}.png',                    True),
+    ('Single-modality (CFP)', 'task1',     f'./predictions/task1_train/colored_{CASE}.png',     False),
+    ('Attention (ours)',      'attention', f'./predictions/attention_train/colored_{CASE}.png', False),
 ]
 
 # 目标统一尺寸 (预测图尺寸, 宽 x 高)
@@ -35,11 +39,22 @@ BOXES = [
     (649,  686, 267, 151, (0, 220, 220)),  # 框3 黄
 ]
 
-BOX_THICK = 5          # 主图框线粗细
-ZOOM_W = 360           # 放大区宽度(每个放大块缩放到此宽)
-GAP = 10               # 间距
-LABEL_H = 44           # 顶部列标签高度
-BG = (255, 255, 255)   # 白底
+# 放大条中各框从左到右的排列顺序 (BOXES 的下标)。None = 按 BOXES 原序
+ZOOM_ORDER = [1, 2, 0]
+
+DISP_W = 620        # 每列显示宽度 (主图与放大条同宽)
+BOX_THICK = 5       # 主图框线粗细
+ZOOM_BORDER = 6     # 放大块外框粗细
+GAP = 8             # 放大块之间的间距
+V_GAP = 10          # 主图与放大条之间的垂直间距
+COL_GAP = 26        # 列与列之间的间距
+LABEL_H = 44        # 顶部列标签高度 (SHOW_LABELS=False 时忽略)
+SHOW_LABELS = False # 是否在每列顶部写标签
+BG = (255, 255, 255)
+
+OUT_DIR = Path(f'fig_core_{CASE}')
+SAVE_BOXED_FULLRES = True   # 单独保存的带框主图是否用原始分辨率
+SAVE_PARTS = True           # 是否保存 boxed / zoom / column 单图
 # ================================
 
 
@@ -61,84 +76,109 @@ def draw_boxes(img):
     return out
 
 
-def crop_zoom(img, box, target_w):
+def to_disp(im, w=DISP_W):
+    h = max(int(round(im.shape[0] * w / im.shape[1])), 1)
+    return cv2.resize(im, (w, h), interpolation=cv2.INTER_AREA)
+
+
+def plan_zoom_strip(order):
+    """求解统一的放大块内容高度 H, 使得整条放大条宽度恰好等于 DISP_W。
+
+    返回 (H, [每个放大块的内容宽度]).
+    """
+    n = len(order)
+    aspects = [BOXES[i][2] / BOXES[i][3] for i in order]     # w/h
+    budget = DISP_W - GAP * (n - 1) - 2 * ZOOM_BORDER * n     # 留给图像内容的总宽
+    if budget <= 0:
+        raise ValueError('DISP_W 太小, 放不下放大条')
+    h = budget / sum(aspects)
+    widths = [max(int(round(a * h)), 1) for a in aspects]
+    # 四舍五入的误差全部补到最后一块, 保证宽度精确对齐
+    widths[-1] += budget - sum(widths)
+    return max(int(round(h)), 1), widths
+
+
+def make_zoom(raw, box, out_w, out_h, border=ZOOM_BORDER):
     x, y, w, h, color = box
-    crop = img[y:y+h, x:x+w].copy()
-    scale = target_w / w
-    zoom = cv2.resize(crop, (target_w, int(h * scale)), interpolation=cv2.INTER_NEAREST)
-    # 给放大块加同色边框
-    zoom = cv2.copyMakeBorder(zoom, 4, 4, 4, 4, cv2.BORDER_CONSTANT, value=color)
-    return zoom
+    crop = raw[y:y + h, x:x + w].copy()
+    z = cv2.resize(crop, (out_w, out_h), interpolation=cv2.INTER_NEAREST)
+    return cv2.copyMakeBorder(z, border, border, border, border,
+                              cv2.BORDER_CONSTANT, value=color)
+
+
+def hcat(imgs, gap, bg=BG):
+    """等高横向拼接。"""
+    h = imgs[0].shape[0]
+    sep = np.full((h, gap, 3), bg, dtype=np.uint8)
+    out = imgs[0]
+    for im in imgs[1:]:
+        out = np.hstack([out, sep, im])
+    return out
 
 
 def add_top_label(panel, text):
     w = panel.shape[1]
     label = np.full((LABEL_H, w, 3), 255, dtype=np.uint8)
     (tw, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-    cv2.putText(label, text, (max((w - tw)//2, 4), 32),
+    cv2.putText(label, text, (max((w - tw) // 2, 4), 32),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2, cv2.LINE_AA)
     return np.vstack([label, panel])
 
 
 def main():
-    # 1) 载入三列, 画主图框
+    # 1) 载入三列
     cols_raw = []
-    for label, path, is_gt in COLUMNS:
+    for label, key, path, is_gt in COLUMNS:
         if not Path(path).exists():
             print(f'[skip] {label}: {path} not found')
             return
         cols_raw.append(load_col(path, is_gt))
 
-    disp_w = 620   # 每列显示宽度(主图与放大块统一)
+    order = ZOOM_ORDER if ZOOM_ORDER else list(range(len(BOXES)))
+    zoom_h, zoom_ws = plan_zoom_strip(order)
 
-    # 主图: 画框 + 缩到 disp_w + 顶部标签
-    def to_disp(im, w=disp_w):
-        h = int(im.shape[0] * w / im.shape[1])
-        return cv2.resize(im, (w, h), interpolation=cv2.INTER_AREA)
-    mains = []
-    for raw, (lbl, _, _) in zip(cols_raw, COLUMNS):
-        m = to_disp(draw_boxes(raw))
-        mains.append(m)
+    if SAVE_PARTS:
+        for sub in ('boxed', 'zoom', 'column'):
+            (OUT_DIR / sub).mkdir(parents=True, exist_ok=True)
 
-    gap_col = np.full((mains[0].shape[0], GAP, 3), 255, dtype=np.uint8)
-    main_row = mains[0]
-    for m in mains[1:]:
-        main_row = np.hstack([main_row, gap_col, m])
+    columns = []
+    for raw, (lbl, key, _, _) in zip(cols_raw, COLUMNS):
+        # 2) 主图: 画框
+        boxed = draw_boxes(raw)
+        if SAVE_PARTS:
+            save_img = boxed if SAVE_BOXED_FULLRES else to_disp(boxed)
+            p = OUT_DIR / 'boxed' / f'{CASE}_boxed_{key}.png'
+            cv2.imwrite(str(p), save_img)
+            print(f'  [boxed ] {p}  ({save_img.shape[1]}x{save_img.shape[0]})')
+        main_disp = to_disp(boxed)
 
-    # 2) 每个框: 三列放大, 每个放大块宽度 = disp_w (与主图列对齐), 保持比例
-    zoom_rows = []
-    for box in BOXES:
-        x, y, w, h, color = box
-        # 该框放大块的统一高度(按框比例, 缩到 disp_w 宽)
-        zh = int(h * disp_w / w)
+        # 3) 放大块: 统一高度, 宽度按各框比例
         zooms = []
-        for raw in cols_raw:
-            crop = raw[y:y+h, x:x+w].copy()
-            z = cv2.resize(crop, (disp_w, zh), interpolation=cv2.INTER_NEAREST)
-            z = cv2.copyMakeBorder(z, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=color)
+        for slot, bi in enumerate(order):
+            z = make_zoom(raw, BOXES[bi], zoom_ws[slot], zoom_h)
             zooms.append(z)
-        gz = np.full((zooms[0].shape[0], GAP, 3), 255, dtype=np.uint8)
-        row = zooms[0]
-        for z in zooms[1:]:
-            row = np.hstack([row, gz, z])
-        zoom_rows.append(row)
+            if SAVE_PARTS:
+                p = OUT_DIR / 'zoom' / f'{CASE}_box{bi + 1}_{key}.png'
+                cv2.imwrite(str(p), z)
+                print(f'  [zoom  ] {p}  ({z.shape[1]}x{z.shape[0]})')
+        strip = hcat(zooms, GAP)
 
-    # 3) 垂直拼接, 所有行居中对齐到最大宽度
-    total_w = max([main_row.shape[1]] + [r.shape[1] for r in zoom_rows])
-    def pad_center(im):
-        if im.shape[1] < total_w:
-            extra = total_w - im.shape[1]
-            left = extra // 2
-            right = extra - left
-            return cv2.copyMakeBorder(im, 0, 0, left, right, cv2.BORDER_CONSTANT, value=BG)
-        return im
-    blocks = [pad_center(main_row)]
-    gap_row = np.full((GAP*2, total_w, 3), 255, dtype=np.uint8)
-    for r in zoom_rows:
-        blocks.append(gap_row)
-        blocks.append(pad_center(r))
-    final = np.vstack(blocks)
+        # 4) 组列: 主图 + 垂直间距 + 放大条
+        assert strip.shape[1] == main_disp.shape[1], \
+            f'放大条宽 {strip.shape[1]} != 主图宽 {main_disp.shape[1]}'
+        vgap = np.full((V_GAP, DISP_W, 3), BG, dtype=np.uint8)
+        col = np.vstack([main_disp, vgap, strip])
+        if SHOW_LABELS:
+            col = add_top_label(col, lbl)
+        columns.append(col)
 
+        if SAVE_PARTS:
+            p = OUT_DIR / 'column' / f'{CASE}_column_{key}.png'
+            cv2.imwrite(str(p), col)
+            print(f'  [column] {p}  ({col.shape[1]}x{col.shape[0]})')
+
+    # 5) 三列并排 (高度天然一致)
+    final = hcat(columns, COL_GAP)
     out = f'fig_core_comparison_{CASE}.png'
     cv2.imwrite(out, final)
     print(f'Saved: {out}  ({final.shape[1]}x{final.shape[0]})')

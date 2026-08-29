@@ -14,3 +14,9 @@ wandb/
 *.jpg
 *.tif
 .env
+
+*.rar
+*.zip
+*.7z
+*.tar.gz
+*_backup.py
