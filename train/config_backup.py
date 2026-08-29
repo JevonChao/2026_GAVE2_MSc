@@ -19,9 +19,6 @@ parser.add_argument('--n_proc', type=int, default=1, help='Number of processes t
 parser.add_argument('--data_folder', type=str, default='./', help='Folder containing the data')
 parser.add_argument('--version', type=str, default='Journal_paper', help='Version of the experiment')
 parser.add_argument('--seed', type=int, default=77, help='Random seed for reproducibility')
-parser.add_argument('--fusion', type=str, default='add',
-                    choices=['add', 'weighted', 'attention'],
-                    help='Fusion mode for CMRRWNet: add / weighted / attention')
 args = parser.parse_args()
 
 
@@ -29,8 +26,7 @@ args = parser.parse_args()
 
 num_folds = args.num_folds
 
-# active_folds = list(range(num_folds))
-active_folds = [1]   # 跳过已完成的 fold-0，只补跑缺失三折
+active_folds = list(range(num_folds))
 
 learning_rate = args.learning_rate
 num_epochs = args.num_epochs
@@ -55,7 +51,6 @@ gpu_id = args.gpu_id
 training_folder = f'./__training/{args.version}/{dataset}'
 
 seed = args.seed
-fusion_mode = args.fusion
 
 if dataset == 'RITE-train':
     images = [

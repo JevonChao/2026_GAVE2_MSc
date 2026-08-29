@@ -5,12 +5,12 @@ import torch
 from skimage import io
 from torchvision import utils as vutils
 import numpy as np
-import sys
-sys.path.append('./train')
 
 from preprocessing import enhance_image
-from models import RRWNet, CMRRWNet
+from model import RRWNet, CMRRWNet
 from utils import pad_images_unet, to_torch_tensors
+
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Get predictions from a model')
@@ -38,18 +38,12 @@ if __name__ == '__main__':
         help='Number of iterations for the refinement module. Default=5')
     parser.add_argument('--base_channels', type=int, default=64,
         help='Base channels for the model. Default=64')
-    parser.add_argument('--fusion', type=str, default='add',
-        choices=['add', 'weighted', 'attention'],
-        help='Fusion mode for CMRRWNet (must match training)')
     args = parser.parse_args()
-    
+
     if args.in_channels == 3:
-        model = RRWNet(input_ch=args.in_channels, output_ch=3,
-                       base_ch=args.base_channels, num_iterations=args.k)
+        model = RRWNet(iterations=args.k, input_ch=args.in_channels, base_ch=args.base_channels)
     elif args.in_channels == 5:
-        model = CMRRWNet(input_ch=args.in_channels, output_ch=3,
-                         base_ch=args.base_channels, num_iterations=args.k,
-                         fusion_mode=args.fusion)
+        model = CMRRWNet(iterations=args.k, input_ch=args.in_channels, base_ch=args.base_channels)
     else:
         raise ValueError('Unsupported number of input channels: {}'.format(args.in_channels))
     
@@ -62,8 +56,7 @@ if __name__ == '__main__':
         print(f"Using GPU: {gpu_id}")
         model.eval()
         model.cuda()
-        # model.load_state_dict(torch.load(args.weights, map_location=f'cuda:{gpu_id}'), strict=True)
-        model.load_state_dict(torch.load(args.weights, map_location=f'cuda:{gpu_id}'), strict=False)
+        model.load_state_dict(torch.load(args.weights, map_location=f'cuda:{gpu_id}'), strict=True)
         device = torch.device("cuda")
 
 
@@ -185,22 +178,3 @@ if __name__ == '__main__':
 
             colored_fn = save_path / ("colored_" + Path(image_fn).name)
             vutils.save_image(vis, colored_fn)
-            # 新增：生成 get_biomarker.py 需要的青黄格式
-            # 动脉 → 黄 (R+G, 满足"G亮且B暗")
-            # 静脉 → 青 (G+B, 满足"G亮且R暗")
-            # 交叉 → 绿 (G亮, R暗B暗)
-            av_yc = torch.zeros(3, H, W)
-            av_yc[0][is_artery] = 1.0    # 动脉: R
-            av_yc[1][is_artery] = 1.0    # 动脉: G  → 黄
-            av_yc[1][is_vein]   = 1.0    # 静脉: G
-            av_yc[2][is_vein]   = 1.0    # 静脉: B  → 青
-            av_yc[0][is_crossing] = 0.0  # 交叉: 只留G
-            av_yc[1][is_crossing] = 1.0
-            av_yc[2][is_crossing] = 0.0
-
-            # 裁 padding + 应用 mask（和 vis 一样）
-            av_yc = av_yc[:, padding[0][0]:-padding[0][1], padding[1][0]:-padding[1][1]]
-            av_yc[:, mask_2d < 0.5] = 0
-
-            av_fn = save_path / ("av_" + Path(image_fn).name)
-            vutils.save_image(av_yc, av_fn)

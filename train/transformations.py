@@ -103,18 +103,22 @@ def random_horizontal_flip(npimages):
         return npimages
 
 
-def random_crop(npimages, size=(576, 576)):
-    img_size = npimages[0].shape
-    if img_size != size:
-        i = random.randint(0, img_size[0] - size[0])
-        j = random.randint(0, img_size[1] - size[1])
-        images = [img[i:i+size[0], j:j+size[1], :] for img in npimages]
-        if check_nonzeros_min(images, 576*288):
-            return images
-        else:
-            return random_crop(npimages, size)
-    else:
+def random_crop(npimages, size=(576, 576), max_attempts=50):
+    img_size = npimages[0].shape[:2]   # 只取 (H, W)，不比较 channel 维度
+    crop_h, crop_w = size
+    if img_size[0] <= crop_h or img_size[1] <= crop_w:
+        # 图像比裁剪尺寸还小，直接返回
         return npimages
+    for _ in range(max_attempts):
+        i = random.randint(0, img_size[0] - crop_h)
+        j = random.randint(0, img_size[1] - crop_w)
+        images = [img[i:i+crop_h, j:j+crop_w, :] for img in npimages]
+        if check_nonzeros_min(images, crop_h * crop_w // 4):
+            return images
+    # 超过最大重试次数，取图像中心区域作为兜底
+    ci = (img_size[0] - crop_h) // 2
+    cj = (img_size[1] - crop_w) // 2
+    return [img[ci:ci+crop_h, cj:cj+crop_w, :] for img in npimages]
 
 
 def random_cutout(npimages, num_cutouts=16, size=(0.04, 0.04)):

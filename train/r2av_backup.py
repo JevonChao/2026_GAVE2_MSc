@@ -45,8 +45,7 @@ class R2Vessels:
         gpu_id=None,
         criterion=None,
         base_criterion=None,
-        learning_rate=1e-4,
-        fusion_mode='add'
+        learning_rate=1e-4
     ):
         current = multiprocessing.current_process()
         self.process_id = str(current.pid)
@@ -73,15 +72,13 @@ class R2Vessels:
 
         ### Model
         self.model_name = model
-        model_kwargs = dict(
+        self.model = ModelFactory().create_class(
+            model,
             input_ch=in_channels,
             output_ch=out_channels,
             base_ch=base_channels,
             num_iterations=num_iterations
         )
-        if model == 'CMRRWNet':
-            model_kwargs['fusion_mode'] = fusion_mode
-        self.model = ModelFactory().create_class(model, **model_kwargs)
         if self.use_cuda:
             self.model.cuda()
 
@@ -158,10 +155,24 @@ class R2Vessels:
                 mask = data[2].cuda(non_blocking=True)
 
                 predictions = self.model(retino)
-     
+
+                ################可删##################
+                print(type(predictions))
+                print(len(predictions))
+                ################可删##################
+                
 
                 final_prediction = predictions[-1]
 
+                prob = torch.sigmoid(final_prediction)
+                print('prob min/mean/max:', prob.min().item(), prob.mean().item(), prob.max().item())
+                print('target fg ratio:', vessels.mean().item())
+
+                ################可删##################
+                # print(type(final_prediction))
+                # print(final_prediction.shape)
+                # print(vessels.shape)
+                ################可删##################
 
                 loss = self.criterion(predictions, vessels, mask)
 

@@ -77,31 +77,39 @@ def get_top_n_vessels_in_c(vessel_mask, c_mask, top_n=6):
         vessel_mask (np.ndarray): 血管二值掩码 (uint8)
         c_mask (np.ndarray): C区掩码 (uint8)
         top_n (int): 选取最粗血管的数量
-
+        
     Returns:
-        list[float]: 最粗N段血管的最大直径列表 (按直径降序)
+        list[float]: 最粗N段血管的最大直径列表
     """
-
+    
     vessel_in_c = cv2.bitwise_and(vessel_mask, vessel_mask, mask=c_mask)
-
+    
     _, bin_mask = cv2.threshold(vessel_in_c, 127, 255, cv2.THRESH_BINARY)
-    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(bin_mask, 8, cv2.CV_32S)
-
-    # 对每个连通域(血管段)单独算最大直径, 再按直径排序取最粗的 top_n
-    # 官方定义是 "six widest segments", 因此按直径(宽度)选取, 而非面积
-    diameters = []
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(bin_mask, 8, cv2.CV_32S)
+    vessels = []
     for i in range(1, num_labels):
-        # 精确提取当前这一段血管(用 label, 不用 bounding box, 避免混入相邻血管)
-        seg_mask = (labels == i).astype(np.uint8) * 255
-        skeleton, dist = medial_axis(seg_mask, return_distance=True)
-        if not skeleton.any():
-            continue
-        seg_diameters = dist[skeleton] * 2
-        diameters.append(float(seg_diameters.max()))
-
-    diameters.sort(reverse=True)
-    diameters = diameters[:top_n]
-
+        area = stats[i, cv2.CC_STAT_AREA]
+        
+        x = stats[i, cv2.CC_STAT_LEFT]
+        y = stats[i, cv2.CC_STAT_TOP]
+        w = stats[i, cv2.CC_STAT_WIDTH]
+        h = stats[i, cv2.CC_STAT_HEIGHT]
+        vessels.append( ( -area, x, y, w, h ) )
+    
+    vessels_sorted = sorted(vessels)[:top_n]
+    diameters = []
+    for v in vessels_sorted:
+        area_neg, x, y, w, h = v
+        area = -area_neg
+        mask_roi = np.zeros_like(vessel_mask)
+        mask_roi[y:y+h, x:x+w] = 255
+        vessel_roi = cv2.bitwise_and(vessel_mask, mask_roi)
+   
+        skeleton, dist = medial_axis(vessel_roi, return_distance=True)
+        vessel_diameters = dist[skeleton] * 2
+        max_diameter = vessel_diameters.max()
+        d = max_diameter
+        diameters.append(d)
     if len(diameters) < top_n:
         diameters += [0.0] * (top_n - len(diameters))
     return diameters
@@ -112,11 +120,11 @@ def calculate_crae_crve_revised(vessel_areas, is_artery = True):
     Args:
         vessel_areas (list[float]): C区内最粗6段血管的直径列表
         is_artery (bool): True=计算CRAE,False=计算CRVE
-
+        
     Returns:
         float: CRAE/CRVE计算结果
     """
-
+    
     coeff = 0.88 if is_artery else 0.95
 
     values = sorted(vessel_areas, reverse=True)
@@ -134,10 +142,6 @@ def calculate_crae_crve_revised(vessel_areas, is_artery = True):
             next_values.append(w_new)
             i += 1
             j -= 1
-
-        # 奇数个元素时, 中间那个未配对的值保留到下一轮 (修复: 原实现会丢弃它)
-        if i == j:
-            next_values.append(values[i])
 
         values = next_values
 
@@ -335,9 +339,8 @@ def process_av_indicators(av_dir, disc_dir, output_dir):
 
 
 if __name__ == "__main__":
-    
-    AV_DIR = r"./results/weighted_av"
-    
+    AV_DIR = r"./predictions/attention_av_only"
     DISC_DIR = r"./data/training/disc_traditional"
-    OUTPUT_DIR = r"./results/biomarker_weighted"
+    OUTPUT_DIR = r"./results/biomarker_attention"
     process_av_indicators(AV_DIR, DISC_DIR, OUTPUT_DIR)
+

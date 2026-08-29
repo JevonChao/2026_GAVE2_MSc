@@ -112,9 +112,7 @@ def train(training_path, train_idx, test_idx):
         model=config.model,
         criterion=config.criterion,
         base_criterion=config.base_criterion,
-        learning_rate=config.learning_rate,
-        fusion_mode=config.fusion_mode
-
+        learning_rate=config.learning_rate
     )
 
     # Train the model
@@ -158,10 +156,6 @@ def train_sets(sets):
         criterion_str = config.criterion
         if config.base_criterion is not None:
             criterion_str += '-' + config.base_criterion
-            # 给 CMRRWNet 的不同融合方式区分路径，避免互相覆盖
-        if config.model == 'CMRRWNet':
-            generator_pth += '_fusion-' + config.fusion_mode
-            
         train_path = pattern.format(
             config.training_folder,
             config.num_folds,

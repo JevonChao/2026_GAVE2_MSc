@@ -353,42 +353,10 @@ class ChannelSpatialSELayer(nn.Module):
         # output_tensor = self.cSE(input_tensor) +  self.sSE(input_tensor)
         return output_tensor
 
-
-
-class CrossModalAttention(nn.Module):
-    """方案B：跨模态注意力融合。
-    FFA_A 和 FFA_AV 各自生成一张空间-通道注意力图，
-    分别引导 CFP 特征，使动脉信息与静脉信息在独立通路中被强化，
-    避免简单相加时静脉信号压制动脉信号。
-    """
-    def __init__(self, channels):
-        super().__init__()
-        hidden = max(channels // 4, 1)
-        self.attn_a = nn.Sequential(
-            nn.Conv2d(channels, hidden, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(hidden, channels, 1),
-            nn.Sigmoid()
-        )
-        self.attn_av = nn.Sequential(
-            nn.Conv2d(channels, hidden, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(hidden, channels, 1),
-            nn.Sigmoid()
-        )
-        self.proj = nn.Conv2d(channels, channels, 1)
-
-    def forward(self, fea_rgb, fea_a, fea_av):
-        attn_a = self.attn_a(fea_a)      # 动脉期注意力
-        attn_av = self.attn_av(fea_av)   # 动静脉期注意力
-        guided = fea_rgb * attn_a + fea_rgb * attn_av + fea_a + fea_av
-        return self.proj(guided)
-
     
 class NewUNetModule(nn.Module):
-    def __init__(self, input_ch, output_ch, base_ch, fusion_mode='add'):
+    def __init__(self, input_ch, output_ch, base_ch):
         super().__init__()
-        self.fusion_mode = fusion_mode
 
         # Encoder
         # RGB Encoder (输入 3 通道)
@@ -432,66 +400,29 @@ class NewUNetModule(nn.Module):
         self.ca4 = ChannelSpatialSELayer(16 * base_ch)
 
         self.outconv = nn.Conv2d(base_ch, output_ch, 1, bias=True)
-
-        # ---- 方案A：可学习加权融合 ----
-        self.fusion_w1 = nn.Parameter(torch.ones(3))
-        self.fusion_w2 = nn.Parameter(torch.ones(3))
-        self.fusion_w3 = nn.Parameter(torch.ones(3))
-        self.fusion_w4 = nn.Parameter(torch.ones(3))
-
-        # ---- 方案B：跨模态注意力融合 ----
-        self.cross_attn1 = CrossModalAttention(2 * base_ch)
-        self.cross_attn2 = CrossModalAttention(4 * base_ch)
-        self.cross_attn3 = CrossModalAttention(8 * base_ch)
-        self.cross_attn4 = CrossModalAttention(16 * base_ch)
-
-
     def Asy_fusion1(self, fea_rgb, fea_a, fea_av):# 小的放前面，大的放后面
         fea_rgb = F.max_pool2d(fea_rgb, 2, 2)
         fea_rgb = self.conv2_rgb(fea_rgb)
-        if self.fusion_mode == 'weighted':
-            w = torch.softmax(self.fusion_w1, dim=0)
-            add_fea = w[0] * fea_a + w[1] * fea_av + w[2] * fea_rgb
-        elif self.fusion_mode == 'attention':
-            add_fea = self.cross_attn1(fea_rgb, fea_a, fea_av)
-        else:
-            add_fea = fea_a + fea_av + fea_rgb
+        add_fea = fea_a + fea_av + fea_rgb
         res = self.ca1(add_fea)
         return res
     def Asy_fusion2(self, fea_rgb, fea_a, fea_av):#小的放前面，大的放后面
         fea_rgb = F.max_pool2d(fea_rgb, 2, 2)
         fea_rgb = self.conv3_rgb(fea_rgb)
-        if self.fusion_mode == 'weighted':
-            w = torch.softmax(self.fusion_w2, dim=0)
-            add_fea = w[0] * fea_a + w[1] * fea_av + w[2] * fea_rgb
-        elif self.fusion_mode == 'attention':
-            add_fea = self.cross_attn2(fea_rgb, fea_a, fea_av)
-        else:
-            add_fea = fea_a + fea_av + fea_rgb
+        add_fea = fea_a + fea_av + fea_rgb
         res = self.ca2(add_fea)
         return res
     def Asy_fusion3(self, fea_rgb, fea_a, fea_av):#小的放前面，大的放后面
         fea_rgb = F.max_pool2d(fea_rgb, 2, 2)
         fea_rgb = self.conv4_rgb(fea_rgb)
-        if self.fusion_mode == 'weighted':
-            w = torch.softmax(self.fusion_w3, dim=0)
-            add_fea = w[0] * fea_a + w[1] * fea_av + w[2] * fea_rgb
-        elif self.fusion_mode == 'attention':
-            add_fea = self.cross_attn3(fea_rgb, fea_a, fea_av)
-        else:
-            add_fea = fea_a + fea_av + fea_rgb
+        add_fea = fea_a + fea_av + fea_rgb
+        # add_fea = torch.cat([fea_a,fea_rgb], dim=1)
         res = self.ca3(add_fea)
         return res
     def Asy_fusion4(self, fea_rgb, fea_a, fea_av):#小的放前面，大的放后面
         fea_rgb = F.max_pool2d(fea_rgb, 2, 2)
         fea_rgb = self.conv5_rgb(fea_rgb)
-        if self.fusion_mode == 'weighted':
-            w = torch.softmax(self.fusion_w4, dim=0)
-            add_fea = w[0] * fea_a + w[1] * fea_av + w[2] * fea_rgb
-        elif self.fusion_mode == 'attention':
-            add_fea = self.cross_attn4(fea_rgb, fea_a, fea_av)
-        else:
-            add_fea = fea_a + fea_av + fea_rgb
+        add_fea = fea_a + fea_av + fea_rgb
         res = self.ca4(add_fea)
         return res
     
@@ -562,7 +493,7 @@ class NewUNetModule(nn.Module):
         feats_a = self.forward_encoder_a(a, feats_rgb)
         feats_av = self.forward_encoder_a(av, feats_rgb)
         
-        # 4. Dual-modal feature fusion
+        # 4. 双模态特征融合
         x1, x2, x3, x4= self.forward_features(feats_rgb, feats_a, feats_av)
         
 
@@ -592,9 +523,9 @@ class CMRRWNet(RRWNet):
     Proposed in the paper.
     """
 
-    def __init__(self, input_ch, output_ch, base_ch, num_iterations=5, fusion_mode='add'):
+    def __init__(self, input_ch, output_ch, base_ch, num_iterations=5):
         super().__init__(input_ch, output_ch, base_ch, num_iterations)
-        self.first_u = NewUNetModule(input_ch, output_ch, base_ch, fusion_mode=fusion_mode)
+        self.first_u = NewUNetModule(input_ch, output_ch, base_ch)
         self.second_u = UNetModule(output_ch, 2, base_ch)
 
     def forward(self, x):
