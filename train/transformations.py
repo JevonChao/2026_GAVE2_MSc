@@ -104,10 +104,10 @@ def random_horizontal_flip(npimages):
 
 
 def random_crop(npimages, size=(576, 576), max_attempts=50):
-    img_size = npimages[0].shape[:2]   # 只取 (H, W)，不比较 channel 维度
+    img_size = npimages[0].shape[:2]  
     crop_h, crop_w = size
     if img_size[0] <= crop_h or img_size[1] <= crop_w:
-        # 图像比裁剪尺寸还小，直接返回
+    
         return npimages
     for _ in range(max_attempts):
         i = random.randint(0, img_size[0] - crop_h)
@@ -115,14 +115,15 @@ def random_crop(npimages, size=(576, 576), max_attempts=50):
         images = [img[i:i+crop_h, j:j+crop_w, :] for img in npimages]
         if check_nonzeros_min(images, crop_h * crop_w // 4):
             return images
-    # 超过最大重试次数，取图像中心区域作为兜底
+    
     ci = (img_size[0] - crop_h) // 2
     cj = (img_size[1] - crop_w) // 2
     return [img[ci:ci+crop_h, cj:cj+crop_w, :] for img in npimages]
 
 
 def random_cutout(npimages, num_cutouts=16, size=(0.04, 0.04)):
-    """Randomly masks out one or more patches from an image.
+    """
+    Randomly masks out one or more patches from an image.
     Args:
         npimages: list of images in NumPy format.
         num_cutouts: number of patches to mask out of each image.
@@ -146,7 +147,8 @@ def check_nonzeros_min(npimages, min_nonzeros):
 
 
 def get_unet_padding_np(np_image: numpy.ndarray, n_down=4) -> tuple:
-    """ Calculates the necessary padding of an image to be processed by
+    """ 
+    Calculates the necessary padding of an image to be processed by
     UNet.
 
     Args:
@@ -173,7 +175,8 @@ def pad_images_unet(
     np_images: List[numpy.ndarray],
     return_paddings: bool=False,
 ) -> Union[tuple, list]:
-    """ Applies UNet padding to a list of images in NumPy format.
+    """ 
+    Applies UNet padding to a list of images in NumPy format.
 
     Args:
         np_images: list of NumPy images.

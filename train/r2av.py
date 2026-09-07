@@ -254,7 +254,7 @@ class R2Vessels:
         if os.path.exists(last_model_path):
             print("get last_model_path: ", last_model_path)
             self.model.load_state_dict(torch.load(last_model_path, map_location=self.device))
-            # 找到最新的文件夹数字作为起点
+            
             iters = [int(f) for f in os.listdir(path_to_save) if os.path.isdir(os.path.join(path_to_save, f)) and f.isdigit()]
             self.iter = max(iters) if iters else 0
             

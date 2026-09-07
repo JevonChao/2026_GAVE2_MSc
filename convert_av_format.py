@@ -19,7 +19,7 @@ from skimage import io
 
 def convert(src_path, dst_path):
     gt = io.imread(src_path)
-    gt = gt[:, :, :3]  # 丢掉 alpha 通道
+    gt = gt[:, :, :3]  
     r, g, b = gt[:, :, 0], gt[:, :, 1], gt[:, :, 2]
 
     is_artery = (r > 127) & (g < 127) & (b < 127)   # 原红 -> 动脉
@@ -27,9 +27,9 @@ def convert(src_path, dst_path):
     is_cross = (g > 127) & (r < 127) & (b < 127)    # 原绿 -> 交叉
 
     out = np.zeros_like(gt)
-    out[is_artery] = [255, 255, 0]   # 黄
-    out[is_vein] = [0, 255, 255]     # 青
-    out[is_cross] = [0, 255, 0]      # 绿
+    out[is_artery] = [255, 255, 0]    
+    out[is_vein] = [0, 255, 255]     
+    out[is_cross] = [0, 255, 0]    
     io.imsave(dst_path, out.astype(np.uint8))
 
 

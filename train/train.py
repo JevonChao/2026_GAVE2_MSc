@@ -158,7 +158,7 @@ def train_sets(sets):
         criterion_str = config.criterion
         if config.base_criterion is not None:
             criterion_str += '-' + config.base_criterion
-            # 给 CMRRWNet 的不同融合方式区分路径，避免互相覆盖
+            
         if config.model == 'CMRRWNet':
             generator_pth += '_fusion-' + config.fusion_mode
             

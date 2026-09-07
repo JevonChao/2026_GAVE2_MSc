@@ -141,41 +141,40 @@ if __name__ == '__main__':
             target_fn = save_path / Path(image_fn).name
             vutils.save_image(last_pred, target_fn)
 
-            # 新增：正确的可视化
+            # visulization
             pred = last_pred[0]  # 3×H×W
 
-            artery = pred[0]   # 动脉概率
-            vessel = pred[1]   # 整体血管概率  ← 关键，之前没用
-            vein   = pred[2]   # 静脉概率
+            artery = pred[0]   
+            vessel = pred[1]  
+            vein   = pred[2]  
 
-            # 第一步：先确定哪些像素是血管
+            # wich is vessel
             is_vessel = vessel > 0.5
 
-            # 第二步：在血管像素里，判断是动脉还是静脉
+            # artery or vein
             is_artery = (artery > 0.5) & is_vessel
             is_vein   = (vein   > 0.5) & is_vessel
 
-            # 第三步：是血管，但动静脉都判断不了 → 不确定区域
+            # vessel but not sure artery or vein
             is_uncertain = is_vessel & (~is_artery) & (~is_vein)
 
-            # 上色
+            
             H, W = artery.shape
             vis = torch.zeros(3, H, W)
-            vis[0][is_artery]    = 1.0   # 动脉 → 红
-            vis[2][is_vein]      = 1.0   # 静脉 → 蓝
-            vis[1][is_uncertain] = 1.0   # 不确定 → 绿  ← 新增
+            vis[0][is_artery]    = 1.0   # artery is red
+            vis[2][is_vein]      = 1.0   # vein is bule
+            vis[1][is_uncertain] = 1.0   # unsure is green
 
-            # 动静脉都判断为真的像素（交叉点）会同时有红和蓝 → 品红
-            # 如果想让交叉点也显示绿色，可以额外处理：
+            
             is_crossing = (artery > 0.5) & (vein > 0.5) & is_vessel
             vis[0][is_crossing] = 0.0
             vis[2][is_crossing] = 0.0
-            vis[1][is_crossing] = 1.0    # 交叉点 → 绿
+            vis[1][is_crossing] = 1.0    
 
-            # 裁 padding
+            # padding
             vis = vis[:, padding[0][0]:-padding[0][1], padding[1][0]:-padding[1][1]]
 
-            # 应用 mask
+            # mask
             H2, W2 = vis.shape[1], vis.shape[2]
             # import cv2
             mask_orig = cv2.imread(str(mask_fn), cv2.IMREAD_GRAYSCALE)
@@ -185,20 +184,17 @@ if __name__ == '__main__':
 
             colored_fn = save_path / ("colored_" + Path(image_fn).name)
             vutils.save_image(vis, colored_fn)
-            # 新增：生成 get_biomarker.py 需要的青黄格式
-            # 动脉 → 黄 (R+G, 满足"G亮且B暗")
-            # 静脉 → 青 (G+B, 满足"G亮且R暗")
-            # 交叉 → 绿 (G亮, R暗B暗)
+
             av_yc = torch.zeros(3, H, W)
-            av_yc[0][is_artery] = 1.0    # 动脉: R
-            av_yc[1][is_artery] = 1.0    # 动脉: G  → 黄
-            av_yc[1][is_vein]   = 1.0    # 静脉: G
-            av_yc[2][is_vein]   = 1.0    # 静脉: B  → 青
-            av_yc[0][is_crossing] = 0.0  # 交叉: 只留G
+            av_yc[0][is_artery] = 1.0   
+            av_yc[1][is_artery] = 1.0   
+            av_yc[1][is_vein]   = 1.0   
+            av_yc[2][is_vein]   = 1.0   
+            av_yc[0][is_crossing] = 0.0  
             av_yc[1][is_crossing] = 1.0
             av_yc[2][is_crossing] = 0.0
 
-            # 裁 padding + 应用 mask（和 vis 一样）
+            
             av_yc = av_yc[:, padding[0][0]:-padding[0][1], padding[1][0]:-padding[1][1]]
             av_yc[:, mask_2d < 0.5] = 0
 

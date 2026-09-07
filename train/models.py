@@ -293,40 +293,43 @@ class SpatialSELayer(nn.Module):
         return output_tensor
     
 class ChannelAttentionConv(nn.Module):
-    """ 通道注意力机制——一维卷积版本
+    """ 
+    Channel attention mechanism – 1D convolution version
     """
     def __init__(self, in_channel, gamma = 2, b = 1):
-        """ 初始化
-            - channel: 输入特征图的通道数
-            - gamma: 公式中的两个系数
-            - b: 公式中的两个系数
+        """ 
+            Initialization
+            - channel: number of channels in the input feature map
+            - gamma: two coefficients in the formula
+            - b: two coefficients in the formula
         """
         super(ChannelAttentionConv, self).__init__()
-        # 根据输入通道数自适应调整卷积核大小
+        # Adaptively adjust kernel size based on the number of input channels
         kernel_size = int(abs((math.log(in_channel, 2) + b) / gamma))
-        # 如果卷积核大小是奇数
+
         kernel_size = kernel_size if kernel_size % 2 else kernel_size + 1
-        # 池化
+        # pooling
         self.avg_pooling = nn.AdaptiveAvgPool2d(1)
         self.max_pooling = nn.AdaptiveMaxPool2d(1)
-        # 一维卷积
+        # 1D onvolution
         self.conv = nn.Conv1d(1, 1, kernel_size = kernel_size,
                               padding = (kernel_size - 1) // 2, bias = False)
         self.sigmoid = nn.Sigmoid()
         # self.conv1 = nn.Conv2d(in_channel, in_channel//2, kernel_size=1,  bias=False)
 
     def forward(self, X):
-        """ 前向传播
+        """ 
+        Forward propagation
         """
-        # 全局池化 [b,c,h,w]==>[b,c,1,1]
+        # Global pooling [b,c,h,w]==>[b,c,1,1]
         avg_x = self.avg_pooling(X)
         max_x = self.max_pooling(X)
-        # [b,c,1,1]==>[b,1,c] =1D卷积=> [b,1,c]==>[b,c,1,1]
+        # [b,c,1,1]==>[b,1,c] =1D Conv=> [b,1,c]==>[b,c,1,1]
         avg_out = self.conv(avg_x.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
         max_out = self.conv(max_x.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
-        # 权值归一化
+        # Global pooling
         v = self.sigmoid(avg_out + max_out)
-        # 输入特征图和通道权重相乘 [b,c,h,w]
+        # Multiply the input feature map by the channel weights  [b,c,h,w]
         return  X * v
     
 class ChannelSpatialSELayer(nn.Module):
@@ -356,7 +359,8 @@ class ChannelSpatialSELayer(nn.Module):
 
 
 class CrossModalAttention(nn.Module):
-    """方案B：跨模态注意力融合。
+    """
+    方案B：跨模态注意力融合。
     FFA_A 和 FFA_AV 各自生成一张空间-通道注意力图，
     分别引导 CFP 特征，使动脉信息与静脉信息在独立通路中被强化，
     避免简单相加时静脉信号压制动脉信号。

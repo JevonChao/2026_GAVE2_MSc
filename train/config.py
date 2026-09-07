@@ -30,7 +30,7 @@ args = parser.parse_args()
 num_folds = args.num_folds
 
 # active_folds = list(range(num_folds))
-active_folds = [1]   # 跳过已完成的 fold-0，只补跑缺失三折
+active_folds = [num_folds]  
 
 learning_rate = args.learning_rate
 num_epochs = args.num_epochs

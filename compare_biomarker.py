@@ -50,7 +50,7 @@ def smape(pred, true):
 
 def main():
     if len(sys.argv) < 3:
-        print('Usage: python compare_biomarker.py <pred_dir> <gt_dir> [--holdout]')
+        print('Usage: python compare_biomarker.py <pred_dir> <gt_dir> [--holdout] [--csv out.csv]')
         sys.exit(1)
 
     pred_dir = Path(sys.argv[1])
@@ -70,6 +70,7 @@ def main():
     # 累加每个指标的误差
     abs_err = {m: [] for m in METRICS}
     smape_err = {m: [] for m in METRICS}
+    per_case = []          # per-case rows, for the significance tests
     n_used = 0
     skipped = []
 
@@ -81,14 +82,18 @@ def main():
         pred = parse_txt(pf)
         true = parse_txt(gf)
         used = False
+        row = {'image': pf.stem}
         for m in METRICS:
             pv, tv = pred.get(m), true.get(m)
             if pv is None or tv is None:
                 continue
             abs_err[m].append(abs(pv - tv))
             smape_err[m].append(smape(pv, tv))
+            row[f'{m}_smape'] = smape(pv, tv)
+            row[f'{m}_abserr'] = abs(pv - tv)
             used = True
         if used:
+            per_case.append(row)
             n_used += 1
 
     print('=' * 68)
@@ -106,6 +111,23 @@ def main():
         else:
             print(f'{m:<28}{"--":>12}{"--":>14}{0:>6}')
     print('=' * 68)
+
+    csv_out = None
+    for i, a in enumerate(sys.argv):
+        if a == '--csv' and i + 1 < len(sys.argv):
+            csv_out = sys.argv[i + 1]
+    if csv_out and per_case:
+        import csv as _csv
+        keys = ['image']
+        for m in METRICS:
+            keys += [f'{m}_smape', f'{m}_abserr']
+        out = Path(csv_out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, 'w', newline='', encoding='utf-8') as f:
+            w = _csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
+            w.writeheader()
+            w.writerows(per_case)
+        print(f'\nPer-case errors written to {out}')
 
     if skipped:
         print(f'\nSkipped {len(skipped)} files:')

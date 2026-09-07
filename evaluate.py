@@ -164,7 +164,44 @@ def main():
     print(f'  weights : {args.weights}')
     print(f'  device  : {device}')
     state = torch.load(args.weights, map_location=device)
-    model.load_state_dict(state, strict=True)
+
+    # The fusion parameters (fusion_w*, cross_attn*) are created unconditionally
+    # in CMRRWNet.__init__, but only one set is used by forward() for a given
+    # fusion mode. Checkpoints trained before a set was added therefore lack
+    # those keys. Skipping them is safe, but only for the modes that do not use
+    # them, so the exception is granted explicitly and everything else must
+    # still match exactly.
+    if args.in_channels == 5:
+        inactive = {'add': ('fusion_w', 'cross_attn'),
+                    'weighted': ('cross_attn',),
+                    'attention': ('fusion_w',)}[args.fusion]
+    else:
+        inactive = ()
+
+    result = model.load_state_dict(state, strict=False)
+    missing = list(result.missing_keys)
+    unexpected = list(result.unexpected_keys)
+
+    def is_inactive(key):
+        return any(tag in key for tag in inactive)
+
+    unexplained = [k for k in missing if not is_inactive(k)]
+    if unexplained or unexpected:
+        print('\nERROR: the checkpoint does not match the model.')
+        for k in unexplained[:10]:
+            print(f'  missing   : {k}')
+        for k in unexpected[:10]:
+            print(f'  unexpected: {k}')
+        if len(unexplained) > 10 or len(unexpected) > 10:
+            print(f'  ... {len(unexplained) + len(unexpected)} keys in total')
+        print('Check that --fusion, --base_channels and --k match training.')
+        sys.exit(1)
+
+    if missing:
+        groups = sorted({k.split('.')[1].rstrip('0123456789') for k in missing})
+        print(f'  note    : {len(missing)} unused fusion parameters not in the '
+              f'checkpoint ({", ".join(groups)}); not used by --fusion '
+              f'{args.fusion}, so they are ignored.')
     model.to(device)
     model.eval()
 
@@ -246,6 +283,9 @@ def main():
             scores[name].append(m)
             row[f'{name}_dice'] = m[0]
             row[f'{name}_iou'] = m[1]
+            row[f'{name}_precision'] = m[2]
+            row[f'{name}_recall'] = m[3]
+            row[f'{name}_specificity'] = m[4]
         rows.append(row)
 
         d = {n: scores[n][-1][0] for n in CHANNELS.values()}

@@ -135,7 +135,7 @@ def calculate_crae_crve_revised(vessel_areas, is_artery = True):
             i += 1
             j -= 1
 
-        # 奇数个元素时, 中间那个未配对的值保留到下一轮 (修复: 原实现会丢弃它)
+
         if i == j:
             next_values.append(values[i])
 
