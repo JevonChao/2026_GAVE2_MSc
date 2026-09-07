@@ -7,19 +7,19 @@ import math
 from tqdm import tqdm
 from collections import defaultdict
 import traceback
-from skimage.morphology import skeletonize, medial_axis  # 骨架化函数
+from skimage.morphology import skeletonize, medial_axis  # skeletonisation functions
 import matplotlib.pyplot as plt
 
 
 def get_od_max_circle(od_mask):
     """
     Args:
-        od_mask (np.ndarray): 视盘二值掩码图像
+        od_mask (np.ndarray): binary optic disc mask
         
     Returns:
         tuple: 
-            - (cx, cy) (tuple[int, int]): 外接圆中心坐标
-            - dd (float): 视盘直径
+            - (cx, cy) (tuple[int, int]): centre of the minimum enclosing circle
+            - dd (float): optic disc diameter
     """
 
     contours, _ = cv2.findContours(od_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -37,15 +37,15 @@ def get_od_max_circle(od_mask):
 def generate_annular_masks(av_img, od_center, dd):
     """
     Args:
-        av_img (np.ndarray): 动静脉分割图像
-        od_center (tuple[int, int]): 视盘中心坐标
-        dd (float): 视盘直径
+        av_img (np.ndarray): artery and vein segmentation image
+        od_center (tuple[int, int]): coordinates of the optic disc centre
+        dd (float): optic disc diameter
         
     Returns:
         tuple: 
-            - a_mask (np.ndarray): A区掩码
-            - b_mask (np.ndarray): B区掩码
-            - c_mask (np.ndarray): C区掩码
+            - a_mask (np.ndarray): zone A mask
+            - b_mask (np.ndarray): zone B mask
+            - c_mask (np.ndarray): zone C mask
     """
     h, w = av_img.shape[:2]
     cx, cy = od_center
@@ -74,12 +74,12 @@ def generate_annular_masks(av_img, od_center, dd):
 def get_top_n_vessels_in_c(vessel_mask, c_mask, top_n=6):
     """
     Args:
-        vessel_mask (np.ndarray): 血管二值掩码 (uint8)
-        c_mask (np.ndarray): C区掩码 (uint8)
-        top_n (int): 选取最粗血管的数量
+        vessel_mask (np.ndarray): binary vessel mask (uint8)
+        c_mask (np.ndarray): zone C mask (uint8)
+        top_n (int): number of widest vessel segments to select
 
     Returns:
-        list[float]: 最粗N段血管的最大直径列表 (按直径降序)
+        list[float]: maximum diameters of the N widest segments, in descending order
     """
 
     vessel_in_c = cv2.bitwise_and(vessel_mask, vessel_mask, mask=c_mask)
@@ -87,11 +87,14 @@ def get_top_n_vessels_in_c(vessel_mask, c_mask, top_n=6):
     _, bin_mask = cv2.threshold(vessel_in_c, 127, 255, cv2.THRESH_BINARY)
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(bin_mask, 8, cv2.CV_32S)
 
-    # 对每个连通域(血管段)单独算最大直径, 再按直径排序取最粗的 top_n
-    # 官方定义是 "six widest segments", 因此按直径(宽度)选取, 而非面积
+    # The maximum diameter is computed separately for each connected component
+    # (vessel segment), and the top_n widest are then selected by diameter.
+    # The challenge definition refers to the "six widest segments", so the
+    # selection is made on diameter (width) rather than on area.
     diameters = []
     for i in range(1, num_labels):
-        # 精确提取当前这一段血管(用 label, 不用 bounding box, 避免混入相邻血管)
+        # Extract this segment exactly using the label rather than a bounding
+        # box, so that neighbouring vessels are not included
         seg_mask = (labels == i).astype(np.uint8) * 255
         skeleton, dist = medial_axis(seg_mask, return_distance=True)
         if not skeleton.any():
@@ -110,11 +113,11 @@ def get_top_n_vessels_in_c(vessel_mask, c_mask, top_n=6):
 def calculate_crae_crve_revised(vessel_areas, is_artery = True):
     """
     Args:
-        vessel_areas (list[float]): C区内最粗6段血管的直径列表
-        is_artery (bool): True=计算CRAE,False=计算CRVE
+        vessel_areas (list[float]): diameters of the six widest segments within zone C
+        is_artery (bool): True computes CRAE, False computes CRVE
 
     Returns:
-        float: CRAE/CRVE计算结果
+        float: the resulting CRAE or CRVE value
     """
 
     coeff = 0.88 if is_artery else 0.95
@@ -147,11 +150,11 @@ def calculate_crae_crve_revised(vessel_areas, is_artery = True):
 def calculate_density_in_c(vessel_mask, c_mask):
     """
     Args:
-        vessel_mask (np.ndarray): 血管二值掩码
-        c_mask (np.ndarray): C区掩码
+        vessel_mask (np.ndarray): binary vessel mask
+        c_mask (np.ndarray): zone C mask
         
     Returns:
-        float: 血管密度值
+        float: vessel density
     """
 
     _, vessel_bin = cv2.threshold(vessel_mask, 127, 1, cv2.THRESH_BINARY)
@@ -170,10 +173,10 @@ def calculate_density_in_c(vessel_mask, c_mask):
 def calculate_fractal_dimension_skeleton(binary_img):
     """
     Args:
-        binary_img (np.ndarray): 血管二值掩码 (uint8)
+        binary_img (np.ndarray): binary vessel mask (uint8)
         
     Returns:
-        float: 分形维数值
+        float: fractal dimension
     """
     
     if binary_img.max() == 0:
@@ -219,12 +222,12 @@ def calculate_fractal_dimension_skeleton(binary_img):
 def extract_av_masks(av_img):
     """
     Args:
-        av_img (np.ndarray): 动静脉分割RGB图像
+        av_img (np.ndarray): RGB artery and vein segmentation image
         
     Returns:
         tuple:
-            - artery_mask (np.ndarray): 动脉二值掩码
-            - vein_mask (np.ndarray): 静脉二值掩码
+            - artery_mask (np.ndarray): binary artery mask
+            - vein_mask (np.ndarray): binary vein mask
     """
     
     r_channel = av_img[:, :, 0]
@@ -238,20 +241,21 @@ def extract_av_masks(av_img):
 
 def process_av_indicators(av_dir, disc_dir, output_dir):
     """
-    计算动静脉7项指标并保存结果
-    指标列表：
-    1. CRAE - 视网膜中央动脉当量
-    2. CRVE - 视网膜中央静脉当量
-    3. AVR  - 动静脉比 (CRAE/CRVE)
-    4. artery_density - C区动脉密度
-    5. vein_density - C区静脉密度
-    6. artery_fractal_dimension - 动脉分形维数
-    7. vein_fractal_dimension - 静脉分形维数
+    Compute the seven artery and vein biomarkers and save the results.
+
+    Biomarkers:
+    1. CRAE - central retinal artery equivalent
+    2. CRVE - central retinal vein equivalent
+    3. AVR  - arteriolar-to-venular ratio (CRAE/CRVE)
+    4. artery_density - artery density within zone C
+    5. vein_density - vein density within zone C
+    6. artery_fractal_dimension - artery fractal dimension
+    7. vein_fractal_dimension - vein fractal dimension
     
     Args:
-        av_dir (str): 动静脉分割图像文件夹路径
-        disc_dir (str): 视盘轮廓图像文件夹路径
-        output_dir (str): 结果文件保存文件夹路径
+        av_dir (str): directory of artery and vein segmentation images
+        disc_dir (str): directory of optic disc mask images
+        output_dir (str): directory in which the result files are saved
     """
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -319,7 +323,7 @@ def process_av_indicators(av_dir, disc_dir, output_dir):
                 for idx, (key, value) in enumerate(results.items(), 1):
                     if isinstance(value, float):
                         if math.isinf(value):
-                            f.write(f"{key} N/A (分母为0)\n")
+                            f.write(f"{key} N/A (zero denominator)\n")
                         else:
                             f.write(f"{key} {value:.6f}\n")
                     else:

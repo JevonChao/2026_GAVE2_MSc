@@ -1,14 +1,16 @@
 """
-Script 3 / 3 —— 生物标志物结果对比
+Script 3 / 3 - biomarker comparison
 
-把 get_biomarker.py 算出的结果和数据集真值 (data/training/biomarker) 对比，
-计算每个指标的平均绝对误差 (MAE) 和对称平均绝对百分比误差 (SMAPE)。
-这两个指标是 GAVE2 挑战赛官方用于 Task3 评估的指标。
+Compares the values produced by get_biomarker.py against the reference values
+supplied with the dataset (data/training/biomarker), reporting the mean
+absolute error (MAE) and the symmetric mean absolute percentage error (SMAPE)
+for each biomarker. These are the metrics used for Task 3 of the GAVE2
+challenge.
 
-用法:
-    python compare_biomarker.py <算出的结果目录> <真值目录>
+Usage:
+    python compare_biomarker.py <predicted_dir> <reference_dir>
 
-例:
+Example:
     python compare_biomarker.py ./results/biomarker_gt_check ./data/training/biomarker
 """
 
@@ -25,7 +27,7 @@ METRICS = [
 
 
 def parse_txt(path):
-    """把一个生物标志物 txt 解析成 {指标名: 值}。无法解析的值记为 None。"""
+    """Parse a biomarker txt file into {metric: value}. Unparsable values become None."""
     out = {}
     with open(path, encoding='utf-8') as f:
         for line in f:
@@ -67,7 +69,7 @@ def main():
         print(f'No .txt files found in {pred_dir}')
         sys.exit(1)
 
-    # 累加每个指标的误差
+    # Accumulate the errors for each metric
     abs_err = {m: [] for m in METRICS}
     smape_err = {m: [] for m in METRICS}
     per_case = []          # per-case rows, for the significance tests

@@ -1,14 +1,16 @@
 """
-Script 1 / 3 —— AV 标注格式转换
+Script 1 / 3 - artery and vein label format conversion
 
-把 GAVE2 的 AV 标注 (R=动脉, G=交叉, B=静脉) 转成 get_biomarker.py 期望的格式:
-    动脉 -> 黄色 (255,255,0)  满足脚本的 "G亮 且 B暗"
-    静脉 -> 青色 (0,255,255)  满足脚本的 "G亮 且 R暗"
-    交叉 -> 绿色 (0,255,0)    G亮、R暗、B暗 (与脚本逻辑一致)
+Converts the GAVE2 artery and vein labels (R = artery, G = crossing,
+B = vein) into the format expected by get_biomarker.py:
+    artery   -> yellow (255,255,0)  satisfies "G high and B low"
+    vein     -> cyan   (0,255,255)  satisfies "G high and R low"
+    crossing -> green  (0,255,0)    G high, R low, B low (consistent with the
+                                    logic of that script)
 
-用法:
-    python convert_av_format.py                      # 转换真实标注 (默认)
-    python convert_av_format.py <输入目录> <输出目录>   # 转换任意目录
+Usage:
+    python convert_av_format.py                        # convert the reference labels (default)
+    python convert_av_format.py <input_dir> <output_dir>   # convert an arbitrary directory
 """
 
 import sys
@@ -22,9 +24,9 @@ def convert(src_path, dst_path):
     gt = gt[:, :, :3]  
     r, g, b = gt[:, :, 0], gt[:, :, 1], gt[:, :, 2]
 
-    is_artery = (r > 127) & (g < 127) & (b < 127)   # 原红 -> 动脉
-    is_vein = (b > 127) & (r < 127) & (g < 127)     # 原蓝 -> 静脉
-    is_cross = (g > 127) & (r < 127) & (b < 127)    # 原绿 -> 交叉
+    is_artery = (r > 127) & (g < 127) & (b < 127)   # originally red -> artery
+    is_vein = (b > 127) & (r < 127) & (g < 127)     # originally blue -> vein
+    is_cross = (g > 127) & (r < 127) & (b < 127)    # originally green -> crossing
 
     out = np.zeros_like(gt)
     out[is_artery] = [255, 255, 0]    

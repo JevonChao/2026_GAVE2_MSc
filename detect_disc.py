@@ -1,15 +1,19 @@
 """
-Script 2 / 3 —— 视盘检测 (传统图像处理)
+Script 2 / 3 - optic disc detection (classical image processing)
 
-视盘 (optic disc) 是眼底图中最亮的圆形区域。本脚本用绿通道最亮区域定位视盘中心，
-输出与 CFP 图同名的灰度掩膜 (视盘=255, 其余=0)，供 get_biomarker.py 使用。
+The optic disc is the brightest circular region in a fundus photograph. This
+script locates its centre from the brightest area of the green channel and
+writes a grayscale mask (disc = 255, background = 0) named after the
+corresponding CFP image, for use by get_biomarker.py.
 
-用法:
-    python detect_disc.py                    # 处理训练集 CFP (默认)
-    python detect_disc.py <CFP目录> <输出目录>  # 处理任意目录
+Usage:
+    python detect_disc.py                          # process the training CFP images (default)
+    python detect_disc.py <cfp_dir> <output_dir>   # process an arbitrary directory
 
-注意: 这是快速验证用的传统方法。跑完请务必抽查几张，确认白色圆圈落在视盘上
-(眼底图里那个亮色圆盘、血管发散的中心)，而不是别的亮斑。
+Note: this is a classical method intended for quick verification. After
+running it, inspect a few outputs to confirm that the white circle falls on
+the optic disc (the bright disc from which the vessels radiate) rather than on
+some other bright region.
 """
 
 import sys
@@ -25,17 +29,17 @@ def detect_disc(cfp_path, out_path, dd_frac=0.18):
         return
     h, w = img.shape[:2]
 
-    # 视盘在绿通道对比更好 (红通道容易饱和)
+    # The disc has better contrast in the green channel (the red channel saturates easily)
     green = img[:, :, 1].astype(np.float32)
 
-    # 高斯模糊抑制血管细节，突出大面积亮区
+    # Gaussian blur suppresses vessel detail and emphasises large bright regions
     blur = cv2.GaussianBlur(green, (0, 0), sigmaX=max(h * 0.01, 1))
 
-    # 最亮点作为视盘中心
+    # Take the brightest point as the disc centre
     _, _, _, max_loc = cv2.minMaxLoc(blur)
     cx, cy = max_loc
 
-    # 视盘直径经验值: 约占图像宽度的 dd_frac
+    # Empirical disc diameter: about dd_frac of the image width
     dd = int(w * dd_frac)
     radius = max(dd // 2, 1)
 
