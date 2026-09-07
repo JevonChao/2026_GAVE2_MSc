@@ -21,3 +21,4 @@ wandb/
 *.tar.gz
 *_backup.py
 *_backup.py
+make_*figure*.py
