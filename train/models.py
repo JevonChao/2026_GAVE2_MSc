@@ -307,11 +307,12 @@ class ChannelAttentionConv(nn.Module):
         # Adaptively adjust kernel size based on the number of input channels
         kernel_size = int(abs((math.log(in_channel, 2) + b) / gamma))
 
+        # Force the kernel size to be odd
         kernel_size = kernel_size if kernel_size % 2 else kernel_size + 1
         # pooling
         self.avg_pooling = nn.AdaptiveAvgPool2d(1)
         self.max_pooling = nn.AdaptiveMaxPool2d(1)
-        # 1D onvolution
+        # 1D convolution
         self.conv = nn.Conv1d(1, 1, kernel_size = kernel_size,
                               padding = (kernel_size - 1) // 2, bias = False)
         self.sigmoid = nn.Sigmoid()
@@ -327,7 +328,7 @@ class ChannelAttentionConv(nn.Module):
         # [b,c,1,1]==>[b,1,c] =1D Conv=> [b,1,c]==>[b,c,1,1]
         avg_out = self.conv(avg_x.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
         max_out = self.conv(max_x.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
-        # Global pooling
+        # Normalise the attention weights
         v = self.sigmoid(avg_out + max_out)
         # Multiply the input feature map by the channel weights  [b,c,h,w]
         return  X * v
@@ -360,10 +361,12 @@ class ChannelSpatialSELayer(nn.Module):
 
 class CrossModalAttention(nn.Module):
     """
-    方案B：跨模态注意力融合。
-    FFA_A 和 FFA_AV 各自生成一张空间-通道注意力图，
-    分别引导 CFP 特征，使动脉信息与静脉信息在独立通路中被强化，
-    避免简单相加时静脉信号压制动脉信号。
+    Cross-modal attention fusion.
+
+    FFA_A and FFA_AV each produce an attention map that separately guides the
+    CFP features, so arterial and venous information are reinforced along
+    independent paths. This avoids the venous signal suppressing the arterial
+    signal, as happens under simple addition.
     """
     def __init__(self, channels):
         super().__init__()
@@ -383,8 +386,8 @@ class CrossModalAttention(nn.Module):
         self.proj = nn.Conv2d(channels, channels, 1)
 
     def forward(self, fea_rgb, fea_a, fea_av):
-        attn_a = self.attn_a(fea_a)      # 动脉期注意力
-        attn_av = self.attn_av(fea_av)   # 动静脉期注意力
+        attn_a = self.attn_a(fea_a)      # arterial-phase attention
+        attn_av = self.attn_av(fea_av)   # arteriovenous-phase attention
         guided = fea_rgb * attn_a + fea_rgb * attn_av + fea_a + fea_av
         return self.proj(guided)
 
@@ -395,14 +398,14 @@ class NewUNetModule(nn.Module):
         self.fusion_mode = fusion_mode
 
         # Encoder
-        # RGB Encoder (输入 3 通道)
+        # RGB encoder (3 input channels)
         self.conv1_rgb = ConvBlock(3, base_ch)
         self.conv2_rgb = ConvBlock(base_ch, 2 * base_ch)
         self.conv3_rgb = ConvBlock(2 * base_ch, 4 * base_ch)
         self.conv4_rgb = ConvBlock(4 * base_ch, 8 * base_ch)
         self.conv5_rgb = ConvBlock(8 * base_ch, 16 * base_ch)
 
-        # A Encoder (输入 1 通道)
+        # FFA encoder (1 input channel)
         self.conv1_a = ConvBlock(1, base_ch)
         self.conv2_a = ConvBlock(base_ch, 2 * base_ch)
         self.conv3_a = ConvBlock(2 * base_ch, 4 * base_ch)
@@ -437,20 +440,20 @@ class NewUNetModule(nn.Module):
 
         self.outconv = nn.Conv2d(base_ch, output_ch, 1, bias=True)
 
-        # ---- 方案A：可学习加权融合 ----
+        # ---- Learnable weighted fusion ----
         self.fusion_w1 = nn.Parameter(torch.ones(3))
         self.fusion_w2 = nn.Parameter(torch.ones(3))
         self.fusion_w3 = nn.Parameter(torch.ones(3))
         self.fusion_w4 = nn.Parameter(torch.ones(3))
 
-        # ---- 方案B：跨模态注意力融合 ----
+        # ---- Cross-modal attention fusion ----
         self.cross_attn1 = CrossModalAttention(2 * base_ch)
         self.cross_attn2 = CrossModalAttention(4 * base_ch)
         self.cross_attn3 = CrossModalAttention(8 * base_ch)
         self.cross_attn4 = CrossModalAttention(16 * base_ch)
 
 
-    def Asy_fusion1(self, fea_rgb, fea_a, fea_av):# 小的放前面，大的放后面
+    def Asy_fusion1(self, fea_rgb, fea_a, fea_av):  # lower-resolution features first, higher-resolution last
         fea_rgb = F.max_pool2d(fea_rgb, 2, 2)
         fea_rgb = self.conv2_rgb(fea_rgb)
         if self.fusion_mode == 'weighted':
@@ -462,7 +465,7 @@ class NewUNetModule(nn.Module):
             add_fea = fea_a + fea_av + fea_rgb
         res = self.ca1(add_fea)
         return res
-    def Asy_fusion2(self, fea_rgb, fea_a, fea_av):#小的放前面，大的放后面
+    def Asy_fusion2(self, fea_rgb, fea_a, fea_av):  # lower-resolution features first, higher-resolution last
         fea_rgb = F.max_pool2d(fea_rgb, 2, 2)
         fea_rgb = self.conv3_rgb(fea_rgb)
         if self.fusion_mode == 'weighted':
@@ -474,7 +477,7 @@ class NewUNetModule(nn.Module):
             add_fea = fea_a + fea_av + fea_rgb
         res = self.ca2(add_fea)
         return res
-    def Asy_fusion3(self, fea_rgb, fea_a, fea_av):#小的放前面，大的放后面
+    def Asy_fusion3(self, fea_rgb, fea_a, fea_av):  # lower-resolution features first, higher-resolution last
         fea_rgb = F.max_pool2d(fea_rgb, 2, 2)
         fea_rgb = self.conv4_rgb(fea_rgb)
         if self.fusion_mode == 'weighted':
@@ -486,7 +489,7 @@ class NewUNetModule(nn.Module):
             add_fea = fea_a + fea_av + fea_rgb
         res = self.ca3(add_fea)
         return res
-    def Asy_fusion4(self, fea_rgb, fea_a, fea_av):#小的放前面，大的放后面
+    def Asy_fusion4(self, fea_rgb, fea_a, fea_av):  # lower-resolution features first, higher-resolution last
         fea_rgb = F.max_pool2d(fea_rgb, 2, 2)
         fea_rgb = self.conv5_rgb(fea_rgb)
         if self.fusion_mode == 'weighted':
@@ -504,10 +507,10 @@ class NewUNetModule(nn.Module):
         x_rgb: B x C x H x W  #ct
         x_e  #pet
         """
-        f0_0 = self.Asy_fusion1(feats_rgb[0], feats_a[1], feats_av[1])  # -可见0(64)- 红外1(128)
-        f1_0 = self.Asy_fusion2(feats_rgb[1], feats_a[2], feats_av[2])  # -可见1(128)- 红外2(256)
-        f2_0 = self.Asy_fusion3(feats_rgb[2], feats_a[3], feats_av[3])  #可见2(256)- 红外3(512)
-        f3_0 = self.Asy_fusion4(feats_rgb[3], feats_a[4], feats_av[4])  #-可见3(512)- 红外3(1024)
+        f0_0 = self.Asy_fusion1(feats_rgb[0], feats_a[1], feats_av[1])  # CFP stage 0 -> FFA stage 1
+        f1_0 = self.Asy_fusion2(feats_rgb[1], feats_a[2], feats_av[2])  # CFP stage 1 -> FFA stage 2
+        f2_0 = self.Asy_fusion3(feats_rgb[2], feats_a[3], feats_av[3])  # CFP stage 2 -> FFA stage 3
+        f3_0 = self.Asy_fusion4(feats_rgb[3], feats_a[4], feats_av[4])  # CFP stage 3 -> FFA stage 4
 
         return [f0_0, f1_0, f2_0, f3_0]
         return outs_fused
@@ -529,7 +532,7 @@ class NewUNetModule(nn.Module):
         return [x1, x2, x3, x4, x5]
 
     # ======================
-    # Encoder：A 前向
+    # Encoder: FFA forward pass
     # ======================
     def forward_encoder_a(self, a, feats_rgb):
         rgb_fea_x1, rgb_fea_x2, rgb_fea_x3, rgb_fea_x4, rgb_fea_x5 = feats_rgb
@@ -557,7 +560,7 @@ class NewUNetModule(nn.Module):
     
     def forward(self, x):
         rgb = x[:, 0:3, :, :]    # B x 3 x H x W
-        a = x[:, 3:4, :, :]      # B x 1 x H x W  （保持维度，不要降成3维）
+        a = x[:, 3:4, :, :]      # B x 1 x H x W  (keep the channel dim; do not squeeze to 3D)
         av = x[:, 4:5, :, :]     # B x 1 x H x W
 
         feats_rgb = self.forward_encoder_rgb(rgb)
