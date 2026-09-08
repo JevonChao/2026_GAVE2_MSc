@@ -12,6 +12,16 @@
 
 ---
 
+## Data and model availability
+
+The complete source code, the trained model checkpoints and the training logs
+are available at:
+
+https://drive.google.com/drive/folders/1Dl3N6odDjGT8hrbqk7iGVAIJYmuiWiqt?usp=sharing
+
+This repository contains the source code only. Model weights are not included
+here because of file size limits.
+
 # Modifications in this fork
 
 This fork was produced for an MSc dissertation at the University of Glasgow
